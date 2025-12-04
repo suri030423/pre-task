@@ -1,58 +1,110 @@
-from tensorflow.keras import Model
-from tensorflow.keras import backend as K
-from tensorflow.keras.layers import (
-    Input, Conv2D, MaxPooling2D, Dropout, Activation,
-    UpSampling2D, BatchNormalization, Concatenate
-)
-from tensorflow.keras import datasets
-import numpy as np
-import matplotlib.pyplot as plt
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-class UNET(Model):
-    def __init__(self, org_shape, n_classes=1):
-        ic = -1  # channels_last 가정
 
-        def conv(x, n_f, mp_flag=True):
-            if mp_flag:
-                x = MaxPooling2D((2, 2), padding='same')(x)
-            x = Conv2D(n_f, (3, 3), padding='same')(x)
-            x = BatchNormalization()(x)
-            x = Activation('relu')(x)
-            x = Dropout(0.05)(x)
-            x = Conv2D(n_f, (3, 3), padding='same')(x)
-            x = BatchNormalization()(x)
-            x = Activation('relu')(x)
-            return x
-
-        def deconv_unet(x, e, n_f):
-            x = UpSampling2D((2, 2))(x)
-            x = Concatenate(axis=ic)([x, e])
-            x = Conv2D(n_f, (3, 3), padding='same')(x)
-            x = BatchNormalization()(x)
-            x = Activation('relu')(x)
-            x = Conv2D(n_f, (3, 3), padding='same')(x)
-            x = BatchNormalization()(x)
-            x = Activation('relu')(x)
-            return x
-
-        inputs = Input(shape=org_shape)
-
-        # encoder
-        c1 = conv(inputs, 16, mp_flag=False)
-        c2 = conv(c1, 32)
-        encoded = conv(c2, 64)
-
-        # decoder
-        x = deconv_unet(encoded, c2, 32)
-        x = deconv_unet(x, c1, 16)
-
-        # binary segmentation: 1채널 + sigmoid
-        outputs = Conv2D(n_classes, (1, 1), activation='sigmoid', padding='same')(x)
-
-        super().__init__(inputs, outputs)
-        # binary mask 라고 가정
-        self.compile(
-            optimizer='adam',
-            loss='binary_crossentropy',
-            metrics=['accuracy']
+class DoubleConv(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv2d(
+                in_channels,
+                out_channels,
+                kernel_size=3,
+                padding=1,
+                bias=False,
+            ),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(
+                out_channels,
+                out_channels,
+                kernel_size=3,
+                padding=1,
+                bias=False,
+            ),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
         )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+
+class Down(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            DoubleConv(in_channels, out_channels),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+
+class Up(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__()
+        self.up = nn.ConvTranspose2d(
+            in_channels,
+            out_channels,
+            kernel_size=2,
+            stride=2,
+        )
+        # up 후 skip과 concat → 채널 수 in_channels (= out_channels + skip_channels)
+        self.conv = DoubleConv(in_channels, out_channels)
+
+    def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
+        x = self.up(x)
+        # 입력 크기가 홀수일 경우 대비하여 패딩으로 정렬
+        diff_y = skip.size(2) - x.size(2)
+        diff_x = skip.size(3) - x.size(3)
+        if diff_y != 0 or diff_x != 0:
+            x = F.pad(
+                x,
+                [
+                    diff_x // 2,
+                    diff_x - diff_x // 2,
+                    diff_y // 2,
+                    diff_y - diff_y // 2,
+                ],
+            )
+        x = torch.cat([skip, x], dim=1)
+        return self.conv(x)
+
+
+class UNet(nn.Module):
+    """PyTorch 구현 U-Net."""
+
+    def __init__(
+        self,
+        in_channels: int = 1,
+        num_classes: int = 2,
+        base_channels: int = 16,
+    ):
+        super().__init__()
+        self.enc1 = DoubleConv(in_channels, base_channels)
+        self.enc2 = Down(base_channels, base_channels * 2)
+        self.enc3 = Down(base_channels * 2, base_channels * 4)
+
+        self.bridge = Down(base_channels * 4, base_channels * 8)
+
+        self.dec3 = Up(base_channels * 8, base_channels * 4)
+        self.dec2 = Up(base_channels * 4, base_channels * 2)
+        self.dec1 = Up(base_channels * 2, base_channels)
+
+        self.head = nn.Conv2d(base_channels, num_classes, kernel_size=1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        c1 = self.enc1(x)
+        c2 = self.enc2(c1)
+        c3 = self.enc3(c2)
+
+        b = self.bridge(c3)
+
+        d3 = self.dec3(b, c3)
+        d2 = self.dec2(d3, c2)
+        d1 = self.dec1(d2, c1)
+
+        return self.head(d1)

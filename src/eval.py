@@ -6,6 +6,7 @@
   여기서는 Dice / IoU 두 지표를 사용.
 """
 
+import argparse
 from pathlib import Path
 
 import torch
@@ -13,7 +14,7 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 
 from dataloader import SegmentationDataset
-from model import UNet          # PyTorch 버전이라고 가정
+from model import UNet          # PyTorch 버전
 from util import logits_to_mask, dice_coeff, iou_score
 
 
@@ -76,11 +77,9 @@ def evaluate_model(
 
         logits = model(imgs)             # (N, C, H_out, W_out)
 
-        # 출력/마스크 크기 맞추기
         if logits.shape[2:] != masks.shape[1:]:
             masks = center_crop_to(masks, logits.shape[2:])
 
-        # 0/1 예측 마스크
         pred_mask = logits_to_mask(logits)        # (N, H, W), 0/1
         true_mask = masks.to(torch.uint8)
 
@@ -90,7 +89,6 @@ def evaluate_model(
         dices.append(dice)
         ious.append(iou)
 
-        # 시각화 몇 장만 저장
         if save_vis_dir is not None and vis_count < max_vis:
             _save_visualization(
                 imgs.cpu(),
@@ -142,12 +140,37 @@ def _save_visualization(
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Evaluate trained U-Net model")
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=Path(__file__).resolve().parent.parent,
+        help="프로젝트 루트(데이터가 data/ 아래에 있다고 가정)",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=None,
+        help="평가에 사용할 checkpoint 경로 (기본: <root>/checkpoints/unet_best.pt)",
+    )
+    parser.add_argument("--batch-size", type=int, default=1, help="배치 크기")
+    parser.add_argument(
+        "--num-workers", type=int, default=0, help="DataLoader num_workers 값",
+    )
+    parser.add_argument(
+        "--max-vis",
+        type=int,
+        default=5,
+        help="시각화로 저장할 샘플 개수 (0이면 저장 안 함)",
+    )
+    args = parser.parse_args()
+
     # 프로젝트 루트 기준 경로
-    project_root = Path(__file__).resolve().parent.parent
+    project_root = args.root
     device = get_device()
     print(f"device: {device}")
 
-    # ---------------- 데이터 로더 (여기서는 test 세트 기준) ----------------
+    # ---------------- 데이터 로더 (test 세트 기준) ----------------
     test_dataset = SegmentationDataset(
         image_dir=project_root / "data" / "test" / "images",
         mask_dir=project_root / "data" / "test" / "masks",
@@ -155,9 +178,9 @@ def main():
     )
     test_loader = DataLoader(
         test_dataset,
-        batch_size=1,
+        batch_size=args.batch_size,
         shuffle=False,
-        num_workers=0,
+        num_workers=args.num_workers,
         pin_memory=True,
     )
 
@@ -166,18 +189,23 @@ def main():
     num_classes = 2  # train.py에서 쓴 설정이랑 반드시 맞추기
     model = UNet(in_channels=in_channels, num_classes=num_classes).to(device)
 
-    ckpt_path = project_root / "checkpoints" / "unet_best.pt"
+    ckpt_path = args.checkpoint or (project_root / "checkpoints" / "unet_best.pt")
+    if not ckpt_path.exists():
+        raise FileNotFoundError(f"Checkpoint를 찾을 수 없습니다: {ckpt_path}")
     state = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(state)
 
     # ---------------- 평가 + 시각화 ----------------
-    vis_dir = project_root / "outputs" / "eval_vis"
+    vis_dir = None
+    if args.max_vis > 0:
+        vis_dir = project_root / "outputs" / "eval_vis"
+
     evaluate_model(
         model,
         test_loader,
         device,
         save_vis_dir=vis_dir,
-        max_vis=5,
+        max_vis=args.max_vis,
     )
 
 

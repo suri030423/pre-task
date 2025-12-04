@@ -6,6 +6,7 @@ from PIL import Image
 import torch
 from torch.utils.data import Dataset, DataLoader
 
+
 class SegmentationDataset(Dataset):
     def __init__(self, image_dir, mask_dir, transform=None, return_weight=False):
         """
@@ -17,36 +18,43 @@ class SegmentationDataset(Dataset):
         self.transform = transform
         self.return_weight = return_weight
 
-        # 이미지 파일 목록 정렬
         self.image_paths = sorted(list(self.image_dir.glob("*")))
-        assert len(self.image_paths) > 0, "이미지 파일이 없습니다."
+        if not self.image_paths:
+            raise ValueError("이미지 파일이 없습니다.")
+
+        missing_masks = []
+        self.mask_paths = []
+        for img_path in self.image_paths:
+            mask_path = self.mask_dir / img_path.name
+            if not mask_path.exists():
+                missing_masks.append(mask_path)
+            else:
+                self.mask_paths.append(mask_path)
+
+        if missing_masks:
+            missing_names = ", ".join(p.name for p in missing_masks)
+            raise FileNotFoundError(
+                f"마스크 파일이 누락되었습니다: {missing_names}"
+            )
+
+        if len(self.mask_paths) != len(self.image_paths):
+            raise ValueError("이미지와 마스크의 개수가 일치하지 않습니다.")
 
     def __len__(self):
         return len(self.image_paths)
 
     def _load_image(self, path):
-        # 흑백 이미지 → 1채널
         img = Image.open(path).convert("L")   # (H, W)
         img = np.array(img, dtype=np.float32)
-
-        # 0~255 → 0~1 정규화
         img = img / 255.0
-
-        # (H, W) → (1, H, W)
-        img = np.expand_dims(img, axis=0)
-
-        return torch.from_numpy(img)  # float32 tensor
+        img = np.expand_dims(img, axis=0)  # (1, H, W)
+        return torch.from_numpy(img)       # float32 tensor
 
     def _load_mask(self, path):
-        # 마스크도 흑백으로 읽고 0/1로 이진화
         mask = Image.open(path).convert("L")
         mask = np.array(mask, dtype=np.uint8)
-
-        # 0/255 → 0/1
         mask = (mask > 0).astype(np.uint8)
-
-        # (H, W) 유지 (channel 필요 없음)
-        return torch.from_numpy(mask)  # uint8 tensor
+        return torch.from_numpy(mask)      # uint8 tensor
 
     def _make_weight_map(self, mask):
         """
@@ -59,12 +67,11 @@ class SegmentationDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path = self.image_paths[idx]
-        mask_path = self.mask_dir / img_path.name  # 같은 파일명 기준
+        mask_path = self.mask_paths[idx]
 
         image = self._load_image(img_path)
         mask = self._load_mask(mask_path)
 
-        # transform 쓰고 싶으면 여기서
         if self.transform is not None:
             image, mask = self.transform(image, mask)
 
@@ -73,6 +80,7 @@ class SegmentationDataset(Dataset):
             return image, mask, weight_map
         else:
             return image, mask
+
 
 def get_loaders(
     root_dir,
