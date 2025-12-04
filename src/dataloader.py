@@ -2,21 +2,72 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+import scipy.ndimage as ndimage
 
 import torch
 from torch.utils.data import Dataset, DataLoader
 
+def elastic_deformation(image, mask, alpha=20.0, sigma=3.0, random_state=None):
+    """
+    U-Net 논문에서 말한 elastic deformation을 단순화해서 구현한 버전.
+    - image: (H, W) float32, 0~1
+    - mask : (H, W) uint8, 0/1
+
+    alpha: 변형 강도 (크면 많이 휘어짐)
+    sigma: 변형을 얼마나 부드럽게 할지 (가우시안 블러 크기)
+    """
+    if random_state is None:
+        random_state = np.random.RandomState(None)
+
+    shape = image.shape  # (H, W)
+
+    # -1 ~ 1 사이 랜덤 필드 생성
+    dx = random_state.uniform(-1, 1, size=shape)
+    dy = random_state.uniform(-1, 1, size=shape)
+
+    # 가우시안 필터로 부드럽게 만들고 alpha 배
+    dx = ndimage.gaussian_filter(dx, sigma=sigma, mode="reflect") * alpha
+    dy = ndimage.gaussian_filter(dy, sigma=sigma, mode="reflect") * alpha
+
+    # 좌표 그리드 생성
+    x, y = np.meshgrid(np.arange(shape[1]), np.arange(shape[0]))
+
+    # 변형된 좌표
+    indices = (y + dy, x + dx)
+
+    # 이미지: bilinear(order=1), 마스크: nearest(order=0)
+    image_def = ndimage.map_coordinates(
+        image, indices, order=1, mode="reflect"
+    )
+    mask_def = ndimage.map_coordinates(
+        mask,  indices, order=0, mode="nearest"
+    )
+
+    return image_def, mask_def
 
 class SegmentationDataset(Dataset):
-    def __init__(self, image_dir, mask_dir, transform=None, return_weight=False):
-        """
-        image_dir: .../train/images
-        mask_dir : .../train/masks
-        """
+    def __init__(
+        self,
+        image_dir,
+        mask_dir,
+        transform=None,
+        return_weight=False,
+        # elastic
+        use_elastic=False,
+        elastic_alpha=20.0,
+        elastic_sigma=3.0,
+        elastic_prob=0.5,
+    ):
         self.image_dir = Path(image_dir)
         self.mask_dir = Path(mask_dir)
         self.transform = transform
         self.return_weight = return_weight
+        
+        # elastic 옵션 추가
+        self.use_elastic = use_elastic
+        self.elastic_alpha = elastic_alpha
+        self.elastic_sigma = elastic_sigma
+        self.elastic_prob = elastic_prob
 
         self.image_paths = sorted(list(self.image_dir.glob("*")))
         if not self.image_paths:
@@ -71,6 +122,23 @@ class SegmentationDataset(Dataset):
 
         image = self._load_image(img_path)
         mask = self._load_mask(mask_path)
+        
+        # elastic deformation
+        if self.use_elastic and np.random.rand() < self.elastic_prob:
+            # torch -> numpy (채널 빼고)
+            img_np = image.squeeze(0).numpy()   # (H, W)
+            mask_np = mask.numpy()             # (H, W)
+
+            img_np, mask_np = elastic_deformation(
+                img_np,
+                mask_np,
+                alpha=self.elastic_alpha,
+                sigma=self.elastic_sigma,
+            )
+
+            # 다시 torch로 변환
+            image = torch.from_numpy(img_np).unsqueeze(0).float()
+            mask = torch.from_numpy(mask_np).to(mask.dtype)
 
         if self.transform is not None:
             image, mask = self.transform(image, mask)
@@ -94,12 +162,17 @@ def get_loaders(
         image_dir=root / "data" / "train" / "images",
         mask_dir=root / "data" / "train" / "masks",
         return_weight=return_weight,
+        use_elastic=True,        
+        elastic_alpha=20.0,
+        elastic_sigma=3.0,
+        elastic_prob=0.7,          # 70% 확률로 적용
     )
 
     val_dataset = SegmentationDataset(
         image_dir=root / "data" / "val" / "images",
         mask_dir=root / "data" / "val" / "masks",
         return_weight=return_weight,
+        use_elastic=False,         # validation에는 augmentation X
     )
 
     train_loader = DataLoader(
