@@ -178,7 +178,7 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="DataLoader num_workers (윈도우는 0 권장)",
     )
-    parser.add_argument("--epochs", type=int, default=30, help="훈련 epoch 수") # epoch 수 여기서 결정
+    parser.add_argument("--epochs", type=int, default=50, help="훈련 epoch 수") # epoch 수 여기서 결정
     parser.add_argument("--lr", type=float, default=1e-3, help="학습률")
     parser.add_argument(
         "--momentum", type=float, default=0.99, help="SGD momentum 값",
