@@ -1,0 +1,38 @@
+파일 구조 잡기
+
+대학원 과제/
+├─ data/
+│  ├─ train/
+│  │  ├─ images/
+│  │  └─ masks/
+│  ├─ val/
+│  │  ├─ images/
+│  │  └─ masks/
+│  └─ test/
+│     ├─ images/
+│     └─ masks/
+│
+├─ src/
+│  ├─ model.py         # U-Net 구조
+│  ├─ dataloader.py    # Kaggle dataset
+│  ├─ train.py         # 학습 루프
+│  ├─ eval.py          # 평가 / 시각화
+│  └─ util.py          # 공용 함수
+│
+└─ README.md
+
+
+[데이터 전처리]
+Kaggle DSB2018 원본 데이터는 instance mask 여러 장으로 구성
+이를 binary mask로 합치는 과정 구현
+train/val/test 7:1.5:1.5 split 적용
+최종 구조는 data/train/images, data/train/masks 형태로 구성
+reproducibility를 위해 원본 stage1_train/ 폴더도 함께 보관
+
+eval.py
+→ 학습된 U-Net을 로드해서 val / test에 대한 성능 평가 + 시각화
+(Dice, IoU 같은 지표 계산, 예측 마스크 몇 장 그림으로 확인)
+
+util.py
+→ 여기저기서 공통으로 쓰는 유틸 함수 모음
+(logits → mask 변환, Dice/IoU 계산, 시각화용 보조 함수 등)

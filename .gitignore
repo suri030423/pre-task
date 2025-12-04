@@ -1,0 +1,14 @@
+data/
+__pycache__/
+*.pt
+*.pth
+*.ckpt
+*.jpg
+*.png
+*.jpeg
+*.bmp
+outputs/
+runs/
+weights/
+venv/
+.env/
