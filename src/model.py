@@ -33,7 +33,6 @@ class DoubleConv(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
 
-
 class Down(nn.Module):
     """
     Down-sampling 블록
@@ -48,7 +47,6 @@ class Down(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
-
 
 class Up(nn.Module):
     """
@@ -89,7 +87,6 @@ class Up(nn.Module):
         return self.conv(x)
 
 class UNet(nn.Module):
-    """PyTorch 구현 U-Net."""
     def __init__(
         self,
         in_channels: int = 1,

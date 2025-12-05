@@ -8,35 +8,13 @@ import matplotlib.pyplot as plt
 from dataloader import SegmentationDataset
 from model import UNet          # PyTorch 버전
 from util import logits_to_mask, dice_coeff, iou_score
+
 """
 학습된 U-Net 모델에 대해 validation / test 세트 성능 평가 및 시각화
 - U-Net 논문에 따라 Dice / IoU 두 지표를 사용
 """
 def get_device() -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-def center_crop_to(
-    tensor: torch.Tensor,
-    target_hw,
-) -> torch.Tensor:
-    """
-    train.py 와 동일한 중앙 crop 함수.
-    padding 없는 conv일 경우, 출력 크기에 맞게 정답/weight를 crop.
-
-    tensor: (N, H, W)
-    target_hw: (H_out, W_out)
-    """
-    _, h, w = tensor.shape
-    th, tw = target_hw
-
-    if h == th and w == tw:
-        return tensor
-
-    y1 = (h - th) // 2
-    x1 = (w - tw) // 2
-    y2 = y1 + th
-    x2 = x1 + tw
-    return tensor[:, y1:y2, x1:x2]
 
 @torch.no_grad()
 def evaluate_model(
@@ -68,9 +46,6 @@ def evaluate_model(
         masks = masks.to(device).long()  # (N, H, W)
 
         logits = model(imgs)             # (N, C, H_out, W_out)
-
-        if logits.shape[2:] != masks.shape[1:]:
-            masks = center_crop_to(masks, logits.shape[2:])
 
         pred_mask = logits_to_mask(logits)        # (N, H, W), 0/1
         true_mask = masks.to(torch.uint8)
@@ -129,7 +104,6 @@ def _save_visualization(
     fig.savefig(save_path, dpi=150)
     plt.close(fig)
 
-
 def main():
     parser = argparse.ArgumentParser(description="Evaluate trained U-Net model")
     parser.add_argument(
@@ -156,12 +130,10 @@ def main():
     )
     args = parser.parse_args()
 
-    # 프로젝트 루트 기준 경로
     project_root = args.root
     device = get_device()
     print(f"device: {device}")
 
-    # ---------------- 데이터 로더 (test 세트 기준) ----------------
     test_dataset = SegmentationDataset(
         image_dir=project_root / "data" / "test" / "images",
         mask_dir=project_root / "data" / "test" / "masks",
@@ -175,7 +147,7 @@ def main():
         pin_memory=True,
     )
 
-    # ---------------- 모델 로드 ----------------
+    # 모델 로드
     in_channels = 1
     num_classes = 2  # train.py에서 쓴 설정이랑 반드시 맞추기
     model = UNet(in_channels=in_channels, num_classes=num_classes).to(device)
@@ -186,7 +158,7 @@ def main():
     state = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(state)
 
-    # ---------------- 평가 + 시각화 ----------------
+    # 평가 / 시각화
     vis_dir = None
     if args.max_vis > 0:
         vis_dir = project_root / "outputs" / "eval_vis"
@@ -198,7 +170,6 @@ def main():
         save_vis_dir=vis_dir,
         max_vis=args.max_vis,
     )
-
 
 if __name__ == "__main__":
     main()

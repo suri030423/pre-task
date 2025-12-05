@@ -109,7 +109,7 @@ class SegmentationDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path = self.image_paths[idx]
-        mask_path = self.mask_paths[idx]
+        mask_path = self.mask_dir / self.image_paths[idx].name
 
         image = self._load_image(img_path)
         mask = self._load_mask(mask_path)

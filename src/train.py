@@ -1,51 +1,20 @@
 """
-U-Net: Convolutional Networks for Biomedical Image Segmentation 논문 구조를
-기본으로 한 학습 스크립트.
-
-핵심 반영 내용:
 - batch size = 1 (큰 타일 기준)
-- padding 없는 conv 사용 시, 출력 크기에 맞춘 중앙 crop (현재 모델은 padding=1이지만 형태 유지)
+- 현재 모델은 padding=1이기에 출력 크기에 맞춘 중앙 crop은 제외
 - pixel-wise softmax + cross entropy
-- class imbalance / 경계 강조를 위한 weight map(선택)
+- class imbalance / 경계 강조를 위한 weight map
 """
-
 import argparse
 from pathlib import Path
 from typing import Tuple, Optional
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
 from dataloader import get_loaders
 from model import UNet  # PyTorch nn.Module
 
 def get_device() -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-def center_crop_to(
-    tensor: torch.Tensor,
-    target_hw: Tuple[int, int],
-) -> torch.Tensor:
-    """
-    출력 feature map 크기에 맞게 GT mask나 weight map을 중앙 기준 crop.
-
-    tensor: (N, H, W) 형태라고 가정
-    target_hw: (H_out, W_out)
-    """
-    _, h, w = tensor.shape
-    th, tw = target_hw
-
-    if h == th and w == tw:
-        return tensor
-
-    y1 = (h - th) // 2
-    x1 = (w - tw) // 2
-    y2 = y1 + th
-    x2 = x1 + tw
-
-    return tensor[:, y1:y2, x1:x2]
-
 
 def compute_weighted_ce_loss(
     logits: torch.Tensor,
@@ -66,7 +35,7 @@ def compute_weighted_ce_loss(
         reduction="none",
     )
 
-    per_pixel_loss = criterion(logits, target)  # (N, H, W)
+    per_pixel_loss = criterion(logits, target)
 
     if weight_map is not None:
         per_pixel_loss = per_pixel_loss * weight_map
@@ -99,25 +68,18 @@ def train_one_epoch(
 
         logits = model(imgs)            # (N, C, H_out, W_out)
 
-        if logits.shape[2:] != masks.shape[1:]:
-            masks = center_crop_to(masks, logits.shape[2:])
-            if weight_maps is not None:
-                weight_maps = center_crop_to(weight_maps, logits.shape[2:])
-
         loss = compute_weighted_ce_loss(
             logits,
             masks,
             weight_map=weight_maps,
             class_weights=class_weights,
         )
-
         loss.backward()
         optimizer.step()
 
         running_loss += loss.item()
 
     return running_loss / len(loader)
-
 
 @torch.no_grad()
 def evaluate(
@@ -143,11 +105,6 @@ def evaluate(
 
         logits = model(imgs)
 
-        if logits.shape[2:] != masks.shape[1:]:
-            masks = center_crop_to(masks, logits.shape[2:])
-            if weight_maps is not None:
-                weight_maps = center_crop_to(weight_maps, logits.shape[2:])
-
         loss = compute_weighted_ce_loss(
             logits,
             masks,
@@ -158,7 +115,6 @@ def evaluate(
 
     return running_loss / len(loader)
 
-
 def parse_args() -> argparse.Namespace:
     """
     학습 스크립트 실행 시 사용할 하이퍼파라미터/경로 옵션 정의
@@ -168,7 +124,7 @@ def parse_args() -> argparse.Namespace:
         "--root",
         type=Path,
         default=Path(__file__).resolve().parent.parent,
-        help="프로젝트 루트(데이터가 data/ 아래에 있다고 가정)",
+        help="프로젝트 루트",
     )
     parser.add_argument("--batch-size", type=int, default=1, help="배치 크기")
     parser.add_argument(
@@ -177,7 +133,7 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="DataLoader num_workers (윈도우는 0 권장)",
     )
-    parser.add_argument("--epochs", type=int, default=50, help="훈련 epoch 수") # epoch 수 여기서 결정
+    parser.add_argument("--epochs", type=int, default=30, help="훈련 epoch 수")
     parser.add_argument("--lr", type=float, default=1e-3, help="학습률")
     parser.add_argument(
         "--momentum", type=float, default=0.99, help="SGD momentum 값",
@@ -189,7 +145,7 @@ def parse_args() -> argparse.Namespace:
         "--checkpoint-dir",
         type=Path,
         default=None,
-        help="체크포인트 저장 경로(기본: <root>/checkpoints)",
+        help="체크포인트 저장 경로",
     )
     return parser.parse_args()
 
@@ -215,7 +171,7 @@ def main():
         root_dir=project_root,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
-        return_weight=False,  # 경계 weight map 쓰려면 True로 변경
+        return_weight=True,  # 경계 weight map
     )
 
     in_channels = 1
@@ -230,7 +186,6 @@ def main():
         nesterov=False,
     )
 
-    # class imbalance 보정: 배경/전경 비율 보고 조정 가능
     class_weights = torch.tensor([0.5, 1.5], dtype=torch.float32).to(device)
 
     num_epochs = args.epochs
