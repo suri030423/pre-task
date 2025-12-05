@@ -2,8 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 class DoubleConv(nn.Module):
+    """
+    [Conv(3x3) → BN → ReLU] × 2 블록
+    U-Net encoder/decoder에서 공통으로 사용하는 기본 convolution 블록
+    """
     def __init__(self, in_channels: int, out_channels: int):
         super().__init__()
         self.net = nn.Sequential(
@@ -32,6 +35,10 @@ class DoubleConv(nn.Module):
 
 
 class Down(nn.Module):
+    """
+    Down-sampling 블록
+    MaxPool로 해상도를 1/2로 줄인 뒤, DoubleConv로 채널 수를 확장
+    """
     def __init__(self, in_channels: int, out_channels: int):
         super().__init__()
         self.net = nn.Sequential(
@@ -44,7 +51,16 @@ class Down(nn.Module):
 
 
 class Up(nn.Module):
+    """
+    Up-sampling 블록
+    ConvTranspose2d로 해상도를 2배 키운 뒤
+    encoder에서 넘어온 skip feature와 concat하여 DoubleConv 수행
+    """
     def __init__(self, in_channels: int, out_channels: int):
+        """
+        in_channels: upsample된 feature + skip feature를 concat한 채널 수
+        out_channels: upsample 이후에 출력할 채널 수
+        """
         super().__init__()
         self.up = nn.ConvTranspose2d(
             in_channels,
@@ -52,12 +68,11 @@ class Up(nn.Module):
             kernel_size=2,
             stride=2,
         )
-        # up 후 skip과 concat → 채널 수 in_channels (= out_channels + skip_channels)
+        # up 후 skip과 concat -> 채널 수 in_channels (= out_channels + skip_channels)
         self.conv = DoubleConv(in_channels, out_channels)
 
     def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
         x = self.up(x)
-        # 입력 크기가 홀수일 경우 대비하여 패딩으로 정렬
         diff_y = skip.size(2) - x.size(2)
         diff_x = skip.size(3) - x.size(3)
         if diff_y != 0 or diff_x != 0:
@@ -73,10 +88,8 @@ class Up(nn.Module):
         x = torch.cat([skip, x], dim=1)
         return self.conv(x)
 
-
 class UNet(nn.Module):
     """PyTorch 구현 U-Net."""
-
     def __init__(
         self,
         in_channels: int = 1,

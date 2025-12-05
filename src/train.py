@@ -17,14 +17,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from dataloader import get_loaders   # SegmentationDataset 포함
-from model import UNet               # PyTorch nn.Module
-
+from dataloader import get_loaders
+from model import UNet  # PyTorch nn.Module
 
 def get_device() -> torch.device:
-    """GPU가 있으면 cuda, 아니면 cpu."""
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 def center_crop_to(
     tensor: torch.Tensor,
@@ -75,7 +72,6 @@ def compute_weighted_ce_loss(
         per_pixel_loss = per_pixel_loss * weight_map
 
     return per_pixel_loss.mean()
-
 
 def train_one_epoch(
     model: nn.Module,
@@ -130,7 +126,7 @@ def evaluate(
     device: torch.device,
     class_weights: Optional[torch.Tensor] = None,
 ) -> float:
-    """validation set에 대한 평균 loss 계산."""
+    """validation set에 대한 평균 loss 계산"""
     model.eval()
     running_loss = 0.0
 
@@ -164,6 +160,9 @@ def evaluate(
 
 
 def parse_args() -> argparse.Namespace:
+    """
+    학습 스크립트 실행 시 사용할 하이퍼파라미터/경로 옵션 정의
+    """
     parser = argparse.ArgumentParser(description="Train U-Net segmentation model")
     parser.add_argument(
         "--root",
@@ -194,11 +193,9 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
-
 def main():
     args = parse_args()
 
-    # ---------------- 경로 및 환경 설정 ----------------
     project_root = args.root
     ckpt_dir = args.checkpoint_dir or (project_root / "checkpoints")
 
@@ -214,7 +211,6 @@ def main():
     # 연산 결정성을 위해 cudnn 설정과 별개로 명시
     torch.use_deterministic_algorithms(True, warn_only=True)
 
-    # ---------------- 데이터 로더 ----------------
     train_loader, val_loader = get_loaders(
         root_dir=project_root,
         batch_size=args.batch_size,
@@ -222,12 +218,10 @@ def main():
         return_weight=False,  # 경계 weight map 쓰려면 True로 변경
     )
 
-    # ---------------- 모델 구성 ----------------
     in_channels = 1
     num_classes = 2
     model = UNet(in_channels=in_channels, num_classes=num_classes).to(device)
 
-    # ---------------- 최적화 / 손실 설정 ----------------
     optimizer = optim.SGD(
         model.parameters(),
         lr=args.lr,
@@ -243,7 +237,6 @@ def main():
     best_val_loss = float("inf")
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
-    # ---------------- 학습 루프 ----------------
     for epoch in range(1, num_epochs + 1):
         train_loss = train_one_epoch(
             model,
