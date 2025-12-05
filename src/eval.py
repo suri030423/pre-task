@@ -1,11 +1,3 @@
-# src/eval.py
-"""
-학습된 U-Net 모델에 대해 validation / test 세트 성능 평가 및 시각화.
-
-- U-Net 논문: 픽셀 단위로 segmentation 성능을 보니
-  여기서는 Dice / IoU 두 지표를 사용.
-"""
-
 import argparse
 from pathlib import Path
 
@@ -16,11 +8,12 @@ import matplotlib.pyplot as plt
 from dataloader import SegmentationDataset
 from model import UNet          # PyTorch 버전
 from util import logits_to_mask, dice_coeff, iou_score
-
-
+"""
+학습된 U-Net 모델에 대해 validation / test 세트 성능 평가 및 시각화
+- U-Net 논문에 따라 Dice / IoU 두 지표를 사용
+"""
 def get_device() -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 def center_crop_to(
     tensor: torch.Tensor,
@@ -45,7 +38,6 @@ def center_crop_to(
     x2 = x1 + tw
     return tensor[:, y1:y2, x1:x2]
 
-
 @torch.no_grad()
 def evaluate_model(
     model,
@@ -55,8 +47,8 @@ def evaluate_model(
     max_vis: int = 5,
 ):
     """
-    전체 데이터셋에 대해 Dice / IoU 평균을 계산하고,
-    일부 샘플은 이미지/GT/pred를 그림으로 저장.
+    전체 데이터셋에 대해 Dice / IoU 평균을 계산하고
+    일부 샘플은 이미지/GT/pred를 그림으로 저장
     """
     model.eval()
     dices = []
@@ -105,7 +97,6 @@ def evaluate_model(
     print(f"Mean IoU : {mean_iou:.4f}")
 
     return mean_dice, mean_iou
-
 
 def _save_visualization(
     imgs: torch.Tensor,

@@ -36,3 +36,26 @@ eval.py
 util.py
 → 여기저기서 공통으로 쓰는 유틸 함수 모음
 (logits → mask 변환, Dice/IoU 계산, 시각화용 보조 함수 등)
+
+
+
+
+
+✔ batch size = 1
+→ 맞음. 너 그대로 사용 중.
+
+✔ optimizer = SGD + momentum 0.99
+→ 논문 그대로. 너 코드에 그대로 들어있음.
+(Adam 쓰면 논문 느낌 사라짐)
+
+✔ lr = 1e-3
+→ 논문 기본 튜닝 그대로.
+
+✔ 구형 conv padding 없는 valid architecture → crop 필요
+→ 너 코드에는 center crop까지 구현해둠. 이것도 논문 감성.
+
+✔ early best validation loss에서 저장
+→ 너 코드: val loss 최소 시 best 저장. 논문도 동일.
+
+✔ epoch 늘릴수록 무조건 좋아지는 구조가 아니다
+→ 실제 논문에서도 10~20 epoch 사이에서 성능이 plateau.

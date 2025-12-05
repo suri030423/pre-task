@@ -4,15 +4,13 @@ import numpy as np
 from glob import glob
 import random
 
-# ===== 1) 경로만 네 PC에 맞게 확인 =====
 STAGE1_ROOT = r"C:\Users\ITurtle\Desktop\pre-requisite\stage1_train"
 OUT_ROOT    = r"C:\Users\ITurtle\Desktop\pre-requisite\data"
 
 train_ratio = 0.7
-val_ratio   = 0.15  # 나머지 0.15는 test
+val_ratio   = 0.15  # 나머지 0.15 = test
 random.seed(42)
 
-# ===== 2) 케이스 목록 읽고 train/val/test 나누기 =====
 cases = [d for d in os.listdir(STAGE1_ROOT)
          if os.path.isdir(os.path.join(STAGE1_ROOT, d))]
 cases = sorted(cases)
@@ -36,7 +34,6 @@ splits = {
     "test":  test_cases,
 }
 
-# ===== 3) 폴더 생성 =====
 def make_dirs(split):
     img_dir = os.path.join(OUT_ROOT, split, "images")
     msk_dir = os.path.join(OUT_ROOT, split, "masks")
@@ -83,6 +80,3 @@ for split, case_list in splits.items():
     img_out, msk_out = make_dirs(split)
     for cid in case_list:
         process_case(cid, split, img_out, msk_out)
-
-print("\n✅ 끝. 이런 구조 생겼을 거임:")
-print(OUT_ROOT)

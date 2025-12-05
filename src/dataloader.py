@@ -1,9 +1,8 @@
 from pathlib import Path
-
 import numpy as np
 from PIL import Image
 import scipy.ndimage as ndimage # elastic deformation
-
+import cv2
 import torch
 from torch.utils.data import Dataset, DataLoader
 
@@ -17,7 +16,7 @@ def elastic_deformation(image, mask, alpha=10.0, sigma=4.0, random_state=None):
         random_state = np.random.RandomState(None)
 
     shape = image.shape  
-
+    
     # -1 ~ 1 사이 초기 displacement field
     dx = random_state.uniform(-1, 1, size=shape)
     dy = random_state.uniform(-1, 1, size=shape)
@@ -29,7 +28,7 @@ def elastic_deformation(image, mask, alpha=10.0, sigma=4.0, random_state=None):
     x, y = np.meshgrid(np.arange(shape[1]), np.arange(shape[0]))
     indices = (y + dy, x + dx)
     
-    # 이미지는 bilinear interpolation(order=1),
+    # 이미지는 bilinear interpolation(order=1)
     # 마스크는 nearest interpolation(order=0)로 왜곡
     image_def = ndimage.map_coordinates(
         image, indices, order=1, mode="reflect"
@@ -37,7 +36,6 @@ def elastic_deformation(image, mask, alpha=10.0, sigma=4.0, random_state=None):
     mask_def = ndimage.map_coordinates(
         mask,  indices, order=0, mode="nearest"
     )
-
     return image_def, mask_def
 
 class SegmentationDataset(Dataset):
@@ -64,16 +62,6 @@ class SegmentationDataset(Dataset):
         self.image_paths = sorted(list(self.image_dir.glob("*")))
         if not self.image_paths:
             raise ValueError("이미지 파일이 없습니다.")
-        
-        """이거 왜 했더라"""
-        missing_masks = []
-        self.mask_paths = []
-        for img_path in self.image_paths:
-            mask_path = self.mask_dir / img_path.name
-            if not mask_path.exists():
-                missing_masks.append(mask_path)
-            else:
-                self.mask_paths.append(mask_path)
 
     def __len__(self):
         return len(self.image_paths)
@@ -100,12 +88,24 @@ class SegmentationDataset(Dataset):
 
     def _make_weight_map(self, mask):
         """
-        경계 강조용 weight map.
-        기본 버전: 모든 픽셀 weight=1
-        논문처럼 수정하여 경계 weight 강조 가능
+        논문 U-Net 방식에서 distance transform을 간단히 적용
+        경계에 가까울수록 weight가 높아짐
         """
-        weight = torch.ones_like(mask, dtype=torch.float32)
-        return weight
+        mask_np = mask.cpu().numpy().astype(np.uint8)
+
+        dist_fg = cv2.distanceTransform(mask_np, distanceType=cv2.DIST_L2, maskSize=5)
+        dist_bg = cv2.distanceTransform(1 - mask_np, cv2.DIST_L2, 5)
+
+        # 경계는 fg와 bg의 두 distance 중 최소가 되는 영역과 일치
+        boundary_distance = np.minimum(dist_fg, dist_bg)
+
+        # boundary 근처는 값이 낮음 → weight는 exp로 반비례 증가
+        sigma = 5.0
+        w0 = 5.0
+
+        weight = 1.0 + w0 * np.exp(-(boundary_distance ** 2) / (2 * sigma * sigma))
+
+        return torch.from_numpy(weight.astype(np.float32))
 
     def __getitem__(self, idx):
         img_path = self.image_paths[idx]
