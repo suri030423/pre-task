@@ -7,22 +7,6 @@ index e69de29bb2d1d6434b8b29ae775ad8c2e48c5391..311da0478d0b8aaa9d8de5d9c45787b0
 +
 +PyTorch 기반으로 학습/평가할 수 있는 간단한 U-Net 파이프라인입니다.
 +
-+## 데이터 구조
-+```
-+project_root/
-+├─ data/
-+│  ├─ train/
-+│  │  ├─ images/
-+│  │  └─ masks/
-+│  ├─ val/
-+│  │  ├─ images/
-+│  │  └─ masks/
-+│  └─ test/
-+│     ├─ images/
-+│     └─ masks/
-+└─ src/
-+```
-+
 +## 학습 실행
 +```bash
 +python src/train.py \
@@ -47,3 +31,4 @@ index e69de29bb2d1d6434b8b29ae775ad8c2e48c5391..311da0478d0b8aaa9d8de5d9c45787b0
 +
 +- `--max-vis` 값을 0으로 설정하면 시각화 이미지를 저장하지 않습니다.
 +- 시각화 이미지는 기본적으로 `<root>/outputs/eval_vis/` 아래에 생성됩니다.
+
